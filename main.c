@@ -1,11 +1,18 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
+#include <SDL2/SDL_mixer.h>
 #include <stdio.h>
 
 int main(int argc, char* argv[]) {
 
-    if (SDL_Init(SDL_INIT_VIDEO) != 0 || TTF_Init() == -1) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0 || TTF_Init() == -1 || Mix_Init(MIX_INIT_MP3) == 0) {
         printf("Init error: %s\n", SDL_GetError());
+        return 1;
+    }
+
+    // Open the audio device
+    if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
+        printf("SDL_mixer could not initialize! SDL_mixer Error: %s\n", Mix_GetError());
         return 1;
     }
 
@@ -52,13 +59,27 @@ int main(int argc, char* argv[]) {
     SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
     SDL_RenderPresent(renderer);
 
-    SDL_Delay(3000); // wait 3 seconds
+    // Load the sound
+    Mix_Chunk* sound = Mix_LoadWAV("aud.mp3");
+    if (!sound) {
+        printf("Failed to load sound! SDL_mixer Error: %s\n", Mix_GetError());
+        return 1;
+    }
+
+    // Play the sound (loop 0 means play once)
+    Mix_PlayChannel(-1, sound, 0);
+
+    // Wait for sound to finish (adjust time based on sound length)
+    SDL_Delay(3000);
 
     // Cleanup
     SDL_DestroyTexture(textTexture);
     TTF_CloseFont(font);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+    Mix_FreeChunk(sound);
+    Mix_CloseAudio();
+    Mix_Quit();
     TTF_Quit();
     SDL_Quit();
 

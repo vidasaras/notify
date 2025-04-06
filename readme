@@ -1,0 +1,8 @@
+
+Build:
+    gcc -o notify main.c -lSDL2 -lSDL2_ttf -lSDL2_mixer
+
+Run after exporting your audio driver:
+    export SDL_AUDIODRIVER=alsa
+or
+    export SDL_AUDIODRIVER=pulse
