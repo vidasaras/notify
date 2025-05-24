@@ -4,38 +4,43 @@
 #include <stdio.h>
 #include <libgen.h>
 #include <unistd.h>
+#include <time.h>
+#include <string.h>
+
+#define MAX_LINE_LEN 1024
+#define LAST_N_LINES 20
 
 char *utf8_to_latin1(const char *utf8) {
-    if (!utf8) return NULL;
+  if (!utf8) return NULL;
 
-    // Worst case: every UTF-8 byte maps to one Latin1 byte
-    size_t len = 0;
-    const unsigned char *src = (const unsigned char *)utf8;
-    while (src[len]) len++;
+  // Worst case: every UTF-8 byte maps to one Latin1 byte
+  size_t len = 0;
+  const unsigned char *src = (const unsigned char *)utf8;
+  while (src[len]) len++;
 
-    char *latin1 = malloc(len + 1); // +1 for null terminator
-    if (!latin1) return NULL;
+  char *latin1 = malloc(len + 1); // +1 for null terminator
+  if (!latin1) return NULL;
 
-    size_t i = 0;
-    while (*src) {
-        if (*src < 0x80) {
-            latin1[i++] = *src++;
-        } else if ((src[0] & 0xE0) == 0xC0 && (src[1] & 0xC0) == 0x80) {
-            unsigned int codepoint = ((src[0] & 0x1F) << 6) | (src[1] & 0x3F);
-            if (codepoint <= 0xFF) {
-                latin1[i++] = (char)codepoint;
-            } else {
-                latin1[i++] = '?';
-            }
-            src += 2;
-        } else {
-            latin1[i++] = '?';
-            src++;
-        }
+  size_t i = 0;
+  while (*src) {
+    if (*src < 0x80) {
+      latin1[i++] = *src++;
+    } else if ((src[0] & 0xE0) == 0xC0 && (src[1] & 0xC0) == 0x80) {
+      unsigned int codepoint = ((src[0] & 0x1F) << 6) | (src[1] & 0x3F);
+      if (codepoint <= 0xFF) {
+        latin1[i++] = (char)codepoint;
+      } else {
+        latin1[i++] = '?';
+      }
+      src += 2;
+    } else {
+      latin1[i++] = '?';
+      src++;
     }
+  }
 
-    latin1[i] = '\0';
-    return latin1;
+  latin1[i] = '\0';
+  return latin1;
 }
 
 int main(int argc, char* argv[]) {
@@ -58,6 +63,56 @@ int main(int argc, char* argv[]) {
     height = displayBounds.h;
   }
 
+  //get the time
+  time_t now = time(NULL);                // Get current time
+
+  const char *filename = "./log.txt";
+  // Write the log
+  FILE *file = fopen(filename, "r");
+  if (!file) {
+    perror("Failed to open file for appending");
+    return 1;
+  }
+  fseek(file, 0, SEEK_END);
+  long pos = ftell(file);
+  int newline_count = 0;
+
+  // Go backwards until we find LAST_N_LINES newlines or reach start
+  while (pos > 0 && newline_count <= LAST_N_LINES) {
+    fseek(file, --pos, SEEK_SET);
+    if (fgetc(file) == '\n') {
+      newline_count++;
+    }
+  }
+
+  // If we didn't find enough lines, rewind to start
+  if (pos <= 0) {
+    rewind(file);
+  }
+
+  // Now read and print the last lines
+  char line[MAX_LINE_LEN];
+  char content_of_line[3][MAX_LINE_LEN];
+  int stack_w, stack_h;
+  while (fgets(line, sizeof(line), file)) {
+    char *token = strtok(line, " ");
+
+    int i = 0;
+    while (token != NULL) {
+      strcpy(content_of_line[i], token);
+      i++;
+      token = strtok(NULL, " ");
+    }
+    int t_then = atoi(content_of_line[0]);
+    double seconds_passed = difftime(now, (time_t)t_then);
+    if (seconds_passed < 5){
+      stack_w += atoi(content_of_line[1]);
+      stack_h += atoi(content_of_line[2]);
+    }
+  }
+  fclose(file);
+
+
   char exePath[1024];
   ssize_t len = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
   if (len != -1) {
@@ -77,7 +132,7 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  int top = 20;
+  int top = 20 + stack_h;
   int right = 20;
 
   const char* text = argv[1];
@@ -87,7 +142,7 @@ int main(int argc, char* argv[]) {
 
   SDL_Color color = {255, 255, 255}; // white
   SDL_Color color_b = {0, 0, 0}; // black
-  //SDL_Surface* textSurface = TTF_RenderText_Solid(font, latin1_str, color);
+                                 //SDL_Surface* textSurface = TTF_RenderText_Solid(font, latin1_str, color);
   SDL_Surface* textSurface = TTF_RenderText_Shaded_Wrapped(font, latin1_str, color, color_b, 560);
   int lineHeight = TTF_FontLineSkip(font);  // includes line spacing
   int numLines = textSurface->h / lineHeight;
@@ -97,6 +152,18 @@ int main(int argc, char* argv[]) {
   int win_h = text_height * numLines + 30;
   int x = width - win_w - right;  // right margin
   int y = top;                    // top margin
+
+  file = fopen(filename, "a");
+  if (!file) {
+    perror("Failed to open file for appending");
+    return 1;
+  }
+
+  fprintf(file, "%d %d %d\n",
+      now,
+      win_w,
+      win_h);
+  fclose(file);
 
   SDL_Window* window = SDL_CreateWindow("Notification", x, y, win_w, win_h, SDL_WINDOW_SHOWN);
   SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
