@@ -58,8 +58,20 @@ int main(int argc, char* argv[]) {
     height = displayBounds.h;
   }
 
+  char exePath[1024];
+  ssize_t len = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
+  if (len != -1) {
+    exePath[len] = '\0';
+  } else {
+    perror("readlink");
+    return 1;
+  }
+  char* dirPath = dirname(exePath);
+
   // Load font
-  TTF_Font* font = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16);
+  char fontPath[1060];
+  snprintf(fontPath, sizeof(fontPath), "%s/font.ttf", dirPath);
+  TTF_Font* font = TTF_OpenFont(fontPath, 16);
   if (!font) {
     printf("Font error: %s\n", TTF_GetError());
     return 1;
@@ -74,8 +86,9 @@ int main(int argc, char* argv[]) {
   TTF_SizeText(font, text, &text_width, &text_height);
 
   SDL_Color color = {255, 255, 255}; // white
+  SDL_Color color_b = {0, 0, 0}; // black
   //SDL_Surface* textSurface = TTF_RenderText_Solid(font, latin1_str, color);
-  SDL_Surface* textSurface = TTF_RenderText_Solid_Wrapped(font, latin1_str, color, 560);
+  SDL_Surface* textSurface = TTF_RenderText_Shaded_Wrapped(font, latin1_str, color, color_b, 560);
   int lineHeight = TTF_FontLineSkip(font);  // includes line spacing
   int numLines = textSurface->h / lineHeight;
 
@@ -99,15 +112,6 @@ int main(int argc, char* argv[]) {
   SDL_RenderPresent(renderer);
 
   // Load the sound
-  char exePath[1024];
-  ssize_t len = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
-  if (len != -1) {
-    exePath[len] = '\0';
-  } else {
-    perror("readlink");
-    return 1;
-  }
-  char* dirPath = dirname(exePath);
   char soundPath[1060];
   snprintf(soundPath, sizeof(soundPath), "%s/aud.mp3", dirPath);
 
