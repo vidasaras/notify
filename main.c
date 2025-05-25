@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <string.h>
+#include <pthread.h>
 
 #define MAX_LINE_LEN 1024
 #define LAST_N_LINES 20
@@ -43,6 +44,43 @@ char *utf8_to_latin1(const char *utf8) {
   return latin1;
 }
 
+typedef void (*callback_t)(void *);
+
+struct delayed_call {
+  int delay;
+  callback_t func;
+  void *arg;
+};
+
+void *delayed_thread(void *data) {
+  struct delayed_call *call = data;
+  sleep(call->delay);
+  call->func(call->arg);
+  free(call);
+  return NULL;
+}
+
+void call_after_delay(int seconds, callback_t func, void *arg) {
+  pthread_t thread;
+  struct delayed_call *call = malloc(sizeof(struct delayed_call));
+  call->delay = seconds;
+  call->func = func;
+  call->arg = arg;
+  pthread_create(&thread, NULL, delayed_thread, call);
+  pthread_detach(thread);
+}
+
+struct move_args {
+  SDL_Window *win;
+  int x, y;
+};
+
+void move_window(void *arg) {
+  struct move_args *args = arg;
+  SDL_SetWindowPosition(args->win, args->x, args->y);
+  free(args);
+}
+
 int main(int argc, char* argv[]) {
 
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0 || TTF_Init() == -1 || Mix_Init(MIX_INIT_MP3) == 0) {
@@ -67,7 +105,50 @@ int main(int argc, char* argv[]) {
   time_t now = time(NULL);                // Get current time
 
   const char *filename = "./log.txt";
-  // Write the log
+
+  char exePath[1024];
+  ssize_t len = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
+  if (len != -1) {
+    exePath[len] = '\0';
+  } else {
+    perror("readlink");
+    return 1;
+  }
+  char* dirPath = dirname(exePath);
+
+  // Load font
+  char fontPath[1060];
+  snprintf(fontPath, sizeof(fontPath), "%s/font.ttf", dirPath);
+  TTF_Font* font = TTF_OpenFont(fontPath, 16);
+  if (!font) {
+    printf("Font error: %s\n", TTF_GetError());
+    return 1;
+  }
+
+  int top = 20;
+  int right = 20;
+
+  const char* text = argv[1];
+  char *latin1_str = utf8_to_latin1(text);
+  int text_width, text_height;
+  TTF_SizeText(font, text, &text_width, &text_height);
+
+  SDL_Color color = {255, 255, 255}; // white
+  SDL_Color color_b = {0, 0, 0}; // black
+                                 //SDL_Surface* textSurface = TTF_RenderText_Solid(font, latin1_str, color);
+  SDL_Surface* textSurface = TTF_RenderText_Shaded_Wrapped(font, latin1_str, color, color_b, 560);
+  int lineHeight = TTF_FontLineSkip(font);  // includes line spacing
+  int numLines = textSurface->h / lineHeight;
+
+  int win_w = text_width + 40;
+  win_w = win_w < 600 ? win_w : 600;
+  int win_h = text_height * numLines + 30;
+  int x = width - win_w - right;  // right margin
+  int y = top;                    // top margin
+
+  SDL_Window* window = SDL_CreateWindow("Notification", x, y, win_w, win_h, SDL_WINDOW_SHOWN);
+  SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+
   FILE *file = fopen(filename, "r");
   if (!file) {
     perror("Failed to open file for appending");
@@ -105,53 +186,17 @@ int main(int argc, char* argv[]) {
     }
     int t_then = atoi(content_of_line[0]);
     double seconds_passed = difftime(now, (time_t)t_then);
-    if (seconds_passed < 5){
+    if (seconds_passed < 3){
       stack_w += atoi(content_of_line[1]);
       stack_h += atoi(content_of_line[2]);
+      struct move_args *args = malloc(sizeof(struct move_args));
+      args->win = window;
+      args->x = x;
+      args->y = y;
+      call_after_delay(seconds_passed, move_window, args);
     }
   }
   fclose(file);
-
-
-  char exePath[1024];
-  ssize_t len = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
-  if (len != -1) {
-    exePath[len] = '\0';
-  } else {
-    perror("readlink");
-    return 1;
-  }
-  char* dirPath = dirname(exePath);
-
-  // Load font
-  char fontPath[1060];
-  snprintf(fontPath, sizeof(fontPath), "%s/font.ttf", dirPath);
-  TTF_Font* font = TTF_OpenFont(fontPath, 16);
-  if (!font) {
-    printf("Font error: %s\n", TTF_GetError());
-    return 1;
-  }
-
-  int top = 20 + stack_h;
-  int right = 20;
-
-  const char* text = argv[1];
-  char *latin1_str = utf8_to_latin1(text);
-  int text_width, text_height;
-  TTF_SizeText(font, text, &text_width, &text_height);
-
-  SDL_Color color = {255, 255, 255}; // white
-  SDL_Color color_b = {0, 0, 0}; // black
-                                 //SDL_Surface* textSurface = TTF_RenderText_Solid(font, latin1_str, color);
-  SDL_Surface* textSurface = TTF_RenderText_Shaded_Wrapped(font, latin1_str, color, color_b, 560);
-  int lineHeight = TTF_FontLineSkip(font);  // includes line spacing
-  int numLines = textSurface->h / lineHeight;
-
-  int win_w = text_width + 40;
-  win_w = win_w < 600 ? win_w : 600;
-  int win_h = text_height * numLines + 30;
-  int x = width - win_w - right;  // right margin
-  int y = top;                    // top margin
 
   file = fopen(filename, "a");
   if (!file) {
@@ -165,8 +210,8 @@ int main(int argc, char* argv[]) {
       win_h);
   fclose(file);
 
-  SDL_Window* window = SDL_CreateWindow("Notification", x, y, win_w, win_h, SDL_WINDOW_SHOWN);
-  SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+  SDL_SetWindowPosition( window,
+                           x, y+stack_h);
 
   SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
   SDL_Rect textRect = {10, 10, textSurface->w, textSurface->h}; // position and size
