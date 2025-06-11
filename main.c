@@ -10,6 +10,9 @@
 
 #define MAX_LINE_LEN 1024
 #define LAST_N_LINES 20
+#define MIN_W 200
+#define MAX_W 600
+#define PADDING 20
 
 char *utf8_to_latin1(const char *utf8) {
   if (!utf8) return NULL;
@@ -136,13 +139,15 @@ int main(int argc, char* argv[]) {
   SDL_Color color = {255, 255, 255}; // white
   SDL_Color color_b = {0, 0, 0}; // black
                                  //SDL_Surface* textSurface = TTF_RenderText_Solid(font, latin1_str, color);
-  SDL_Surface* textSurface = TTF_RenderText_Shaded_Wrapped(font, latin1_str, color, color_b, 560);
+  SDL_Surface* textSurface = TTF_RenderText_Shaded_Wrapped(font, latin1_str, color, color_b, MAX_W-PADDING*2);
   int lineHeight = TTF_FontLineSkip(font);  // includes line spacing
   int numLines = textSurface->h / lineHeight;
 
   int win_w = text_width + 40;
   win_w = win_w < 600 ? win_w : 600;
-  int win_h = text_height * numLines + 30;
+  if (win_w < MIN_W) win_w = MIN_W;
+  else if (win_w > MAX_W) win_w = MAX_W;
+  int win_h = text_height * numLines + PADDING;
   int x = width - win_w - right;  // right margin
   int y = top;                    // top margin
 
